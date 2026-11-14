@@ -1,0 +1,576 @@
+From 8ec69fbc54a5a6b6e37ac4a243f2e7fc29f51881 Mon Sep 17 00:00:00 2001
+From: Sadegh Nakhjiri <sadegh.nakhjiri@stud.uni-duisburg-essen.de>
+Date: Sat, 14 Nov 2026 20:57:10 +0000
+Subject: [PATCH] oneplus3: Bring up Linux 4.4.302 for LineageOS 18.1 (Android
+ 11)
+
+- DTS (15801): delete vbmeta node and keep ramoops reserved memory intact
+- touchscreen (s3320/s1302): fix stack buffer overflows and __user pointer reads
+- ufs-qcom-ice / ufs-qcom: match OnePlus 3 3.18 512B DUN/LBA and CDU mask for /data FDE decryption
+- haptics (pmi8994): switch to legacy qcom,qpnp-haptic timed_output driver for Android 11 vibrator HAL
+- power_supply & leds-qpnp: add legacy /sys/devices/soc/* parent mapping matching LineageOS 18.1 vendor_sepolicy.cil under SELinux Enforcing
+- defconfig: fix missing trailing newline and enable CPUSETS, MEMCG, BLK_CGROUP, SCHED_TUNE, OVERLAY_FS, QTAGUID
+---
+ arch/arm/boot/dts/qcom/15801/msm8996-mtp.dtsi |   3 +-
+ arch/arm/boot/dts/qcom/msm-pmi8994.dtsi       |  21 ++--
+ .../configs/lineageos_oneplus3_defconfig      |  20 +++-
+ .../touchscreen/synaptics_driver_s1302.c      |  41 ++++---
+ .../touchscreen/synaptics_driver_s3320.c      |  32 +++---
+ drivers/leds/leds-qpnp.c                      |  21 +++-
+ drivers/power/power_supply_core.c             | 108 +++++++++++++++++-
+ drivers/scsi/ufs/ufs-qcom-ice.c               |   6 +-
+ drivers/scsi/ufs/ufs-qcom.c                   |   3 +-
+ 9 files changed, 207 insertions(+), 48 deletions(-)
+
+diff --git a/arch/arm/boot/dts/qcom/15801/msm8996-mtp.dtsi b/arch/arm/boot/dts/qcom/15801/msm8996-mtp.dtsi
+index 967c4ecb..02777a19 100644
+--- a/arch/arm/boot/dts/qcom/15801/msm8996-mtp.dtsi
++++ b/arch/arm/boot/dts/qcom/15801/msm8996-mtp.dtsi
+@@ -1090,6 +1090,7 @@
+ 
+ &firmware {
+ 	android {
++		/delete-node/ vbmeta;
+ 		fstab {
+ 			system {
+ 				compatible = "android,system";
+@@ -2296,7 +2297,7 @@
+ 
+ &pmi8994_haptics {
+ 	status = "okay";
+-	qcom,actuator-type = <1>;
++	qcom,actuator-type = "erm";
+ 	qcom,vmax-mv = <2700>;
+ };
+ 
+diff --git a/arch/arm/boot/dts/qcom/msm-pmi8994.dtsi b/arch/arm/boot/dts/qcom/msm-pmi8994.dtsi
+index 26b19757..0124810c 100644
+--- a/arch/arm/boot/dts/qcom/msm-pmi8994.dtsi
++++ b/arch/arm/boot/dts/qcom/msm-pmi8994.dtsi
+@@ -542,28 +542,33 @@
+ 			qcom,pmic-revid = <&pmi8994_revid>;
+ 		};
+ 
+-		pmi8994_haptics: qcom,haptics@c000 {
+-			compatible = "qcom,qpnp-haptics";
++		pmi8994_haptics: qcom,haptic@c000 {
++			status = "disabled";
++			compatible = "qcom,qpnp-haptic";
+ 			reg = <0xc000 0x100>;
+ 			interrupts = <0x3 0xc0 0x0 IRQ_TYPE_EDGE_BOTH>,
+ 				     <0x3 0xc0 0x1 IRQ_TYPE_EDGE_BOTH>;
+-			interrupt-names = "hap-sc-irq", "hap-play-irq";
++			interrupt-names = "sc-irq", "play-irq";
+ 			qcom,pmic-revid = <&pmi8994_revid>;
+ 			vcc_pon-supply = <&pon_perph_reg>;
+-			qcom,int-pwm-freq-khz = <505>;
+ 			qcom,play-mode = "direct";
+ 			qcom,wave-play-rate-us = <5263>;
+-			qcom,actuator-type = <0>;
++			qcom,actuator-type = "lra";
+ 			qcom,wave-shape = "square";
+ 			qcom,vmax-mv = <2000>;
+ 			qcom,ilim-ma = <800>;
+ 			qcom,sc-deb-cycles = <8>;
++			qcom,int-pwm-freq-khz = <505>;
+ 			qcom,en-brake;
+-			qcom,brake-pattern = <0x3 0x3 0x0 0x0>;
+-			qcom,wave-samples = <0x3e 0x3e 0x3e 0x3e 0x3e
+-							 0x3e 0x3e 0x3e>;
++			qcom,brake-pattern = [03 03 00 00];
++			qcom,use-play-irq;
++			qcom,use-sc-irq;
++			qcom,wave-samples = [3e 3e 3e 3e 3e 3e 3e 3e];
+ 			qcom,wave-rep-cnt = <1>;
+ 			qcom,wave-samp-rep-cnt = <1>;
++			qcom,lra-high-z = "opt1";
++			qcom,lra-auto-res-mode = "qwd";
++			qcom,lra-res-cal-period = <4>;
+ 		};
+ 
+ 		qcom,leds@d000 {
+diff --git a/arch/arm64/configs/lineageos_oneplus3_defconfig b/arch/arm64/configs/lineageos_oneplus3_defconfig
+index 505edc02..07977dc1 100644
+--- a/arch/arm64/configs/lineageos_oneplus3_defconfig
++++ b/arch/arm64/configs/lineageos_oneplus3_defconfig
+@@ -652,4 +652,22 @@ CONFIG_NET_ACT_BPF=y
+ CONFIG_NET_CLS_BPF=y
+ CONFIG_SOCK_CGROUP_DATA=y
+ CONFIG_NETFILTER_XT_MATCH_BPF=y
+-CONFIG_NETFILTER_XT_MATCH_OWNER=y
+\ No newline at end of file
++CONFIG_NETFILTER_XT_MATCH_OWNER=y
++CONFIG_CPUSETS=y
++CONFIG_PROC_PID_CPUSET=y
++CONFIG_MEMCG=y
++CONFIG_MEMCG_SWAP=y
++CONFIG_MEMCG_SWAP_ENABLED=y
++CONFIG_BLK_CGROUP=y
++CONFIG_CFQ_GROUP_IOSCHED=y
++CONFIG_SCHED_TUNE=y
++CONFIG_CGROUP_SCHEDTUNE=y
++CONFIG_OVERLAY_FS=y
++CONFIG_NETFILTER_XT_MATCH_QTAGUID=y
++# CONFIG_NETFILTER_XT_MATCH_OWNER is not set
++# CONFIG_DEBUG_INFO is not set
++# CONFIG_KALLSYMS_ALL is not set
++# CONFIG_CORESIGHT is not set
++# CONFIG_MSM_CAMERA_DEBUG is not set
++# CONFIG_MSMB_CAMERA_DEBUG is not set
++# CONFIG_IOMMU_DEBUG is not set
+diff --git a/drivers/input/touchscreen/synaptics_driver_s1302.c b/drivers/input/touchscreen/synaptics_driver_s1302.c
+index e9f1a314..e652ad90 100644
+--- a/drivers/input/touchscreen/synaptics_driver_s1302.c
++++ b/drivers/input/touchscreen/synaptics_driver_s1302.c
+@@ -302,8 +302,8 @@ struct synaptics_ts_data {
+ 	bool suspended;
+ 	bool loading_fw;
+ 	char fw_name[TP_FW_NAME_MAX_LEN];
+-	char fw_id[12];
+-	char manu_name[12];
++	char fw_id[32];
++	char manu_name[32];
+ 
+ 	struct work_struct pm_work;
+ };
+@@ -387,7 +387,7 @@ static int tc_power(struct synaptics_ts_data *ts, unsigned int on)
+ 
+ static int synaptics_read_register_map(struct synaptics_ts_data *ts)
+ {
+-	uint8_t buf[4];
++	uint8_t buf[32];
+ 	int ret;
+ 	memset(buf, 0, sizeof(buf));
+ 	ret = synaptics_rmi4_i2c_write_byte( ts->client, 0xff, 0x0 );
+@@ -472,7 +472,7 @@ static int synaptics_read_register_map(struct synaptics_ts_data *ts)
+ 
+ static int synaptics_read_product_id(struct synaptics_ts_data *ts,char *id)
+ {
+-	uint8_t buf[10]={ 0 };
++	uint8_t buf[32]={ 0 };
+ 	int ret ;
+ 
+ 	ret = synaptics_rmi4_i2c_write_byte(ts->client, 0xff, 0x0);
+@@ -485,7 +485,7 @@ static int synaptics_read_product_id(struct synaptics_ts_data *ts,char *id)
+ 		TPD_ERR("synaptics_read_product_id error %s\n",&buf[0]);
+ 		return -1;
+ 	}
+-	memcpy(id,&buf[0],sizeof(buf));
++	memcpy(id,&buf[0],10);
+ 	TPD_ERR("product id is %s\n",&buf[0]);
+ 	return 0;
+ }
+@@ -917,7 +917,7 @@ static int synatpitcs_fw_update(struct device *dev, bool force)
+ 	const struct firmware *fw = NULL;
+ 	int ret;
+ 	char fw_id_temp[12];
+-	uint8_t buf[4];
++	uint8_t buf[32];
+ 	uint32_t CURRENT_FIRMWARE_ID = 0 ;
+ 
+ 	TPD_DEBUG("%s is called\n",__func__);
+@@ -971,7 +971,7 @@ static ssize_t synaptics_s1302_fw_write(struct file *file, const char __user *pa
+ {
+ 	int val = 0;
+ 	struct synaptics_ts_data *ts = tc_g;
+-	char buf[32];
++	char buf[32] = {0};
+ 
+     if (NULL == tc_g)
+         return -EINVAL;
+@@ -1126,17 +1126,19 @@ const struct file_operations proc_radd =
+     .llseek     = seq_lseek,
+     .release    = single_release,
+ };
+-static ssize_t synaptics_s1302_reset_write (struct file *file, const char *buffer, size_t count, loff_t *ppos)
++static ssize_t synaptics_s1302_reset_write (struct file *file, const char __user *buffer, size_t count, loff_t *ppos)
+ {
+     int ret,write_flag;
+ 	struct synaptics_ts_data *ts = tc_g;
++	char kbuf[16] = {0};
+ 
+ 	if(ts->loading_fw) {
+ 		TPD_ERR("%s FW is updating break!!\n",__func__);
+ 		return count;
+ 	}
+-
+-    ret = sscanf(buffer,"%x",&write_flag);
++	if (count == 0 || count >= sizeof(kbuf)) return -EINVAL;
++	if (copy_from_user(kbuf, buffer, count)) return -EFAULT;
++    ret = sscanf(kbuf,"%x",&write_flag);
+     TPD_ERR("%s write %d\n",__func__,write_flag);
+     if (1 == write_flag)
+     {
+@@ -1176,11 +1178,13 @@ const struct file_operations proc_reset =
+     .llseek     = seq_lseek,
+     .release    = single_release,
+ };
+-static ssize_t synaptics_s1302_debug_write (struct file *file, const char *buffer, size_t count, loff_t *ppos)
++static ssize_t synaptics_s1302_debug_write (struct file *file, const char __user *buffer, size_t count, loff_t *ppos)
+ {
+     int ret,write_flag;
+-
+-    ret = sscanf(buffer,"%x",&write_flag);
++    char kbuf[16] = {0};
++    if (count == 0 || count >= sizeof(kbuf)) return -EINVAL;
++    if (copy_from_user(kbuf, buffer, count)) return -EFAULT;
++    ret = sscanf(kbuf,"%x",&write_flag);
+     TPD_ERR("%s write %d\n",__func__,write_flag);
+     tp_debug = write_flag?1:0;
+ 	return count;
+@@ -1206,10 +1210,13 @@ const struct file_operations proc_debug =
+     .release    = single_release,
+ };
+ 
+-static ssize_t synaptics_s1302_wait_time_write (struct file *file, const char *buffer, size_t count, loff_t *ppos)
++static ssize_t synaptics_s1302_wait_time_write (struct file *file, const char __user *buffer, size_t count, loff_t *ppos)
+ {
+ 	int ret,write_flag;
+-	ret = sscanf(buffer,"%d",&write_flag);
++	char kbuf[16] = {0};
++	if (count == 0 || count >= sizeof(kbuf)) return -EINVAL;
++	if (copy_from_user(kbuf, buffer, count)) return -EFAULT;
++	ret = sscanf(kbuf,"%d",&write_flag);
+ 	TPD_ERR("%s write %d\n",__func__,write_flag);
+ 	touchkey_wait_time = write_flag;
+ 	return count;
+@@ -1693,7 +1700,7 @@ static int checkFlashState(struct i2c_client *client)
+ static int synaptics_fw_check(struct synaptics_ts_data *ts )
+ {
+ 	int ret;
+-	uint8_t buf[5];
++	uint8_t buf[32];
+ 	uint32_t bootloader_mode;
+ 
+ 	if(!ts){
+@@ -2029,7 +2036,7 @@ static int synaptics_ts_probe(struct i2c_client *client, const struct i2c_device
+ #endif
+ 	struct synaptics_ts_data *ts = NULL;
+ 	int ret = -1;
+-	uint8_t buf[4];
++	uint8_t buf[32];
+ 	uint32_t CURRENT_FIRMWARE_ID = 0;
+ 	uint32_t bootloader_mode;
+ 
+diff --git a/drivers/input/touchscreen/synaptics_driver_s3320.c b/drivers/input/touchscreen/synaptics_driver_s3320.c
+index 9cd10384..efeaac36 100644
+--- a/drivers/input/touchscreen/synaptics_driver_s3320.c
++++ b/drivers/input/touchscreen/synaptics_driver_s3320.c
+@@ -499,7 +499,7 @@ struct synaptics_ts_data {
+     bool support_ft;//support force touch
+ 	char fw_name[TP_FW_NAME_MAX_LEN];
+ 	char test_limit_name[TP_FW_NAME_MAX_LEN];
+-	char manu_name[10];
++	char manu_name[32];
+ 
+ 	ktime_t timestamp;
+ };
+@@ -626,7 +626,7 @@ static int tpd_power(struct synaptics_ts_data *ts, unsigned int on)
+ 
+ static int synaptics_read_register_map(struct synaptics_ts_data *ts)
+ {
+-	uint8_t buf[4];
++	uint8_t buf[32];
+ 	int ret;
+ 	memset(buf, 0, sizeof(buf));
+ 	ret = synaptics_rmi4_i2c_write_byte( ts->client, 0xff, 0x0 );
+@@ -1136,7 +1136,7 @@ static void gesture_judge(struct synaptics_ts_data *ts)
+ 	unsigned int keyCode = KEY_F4;
+ 	int ret = 0,gesture_sign, regswipe;
+ 	uint8_t gesture_buffer[10];
+-	unsigned char reportbuf[3];
++	unsigned char reportbuf[16];
+         if(version_is_s3508)
+ 		F12_2D_DATA04 = 0x0008;
+ 	else
+@@ -2599,7 +2599,7 @@ static int synatpitcs_fw_update(struct device *dev, bool force)
+ 	const struct firmware *fw = NULL;
+ 	int ret;
+ 	char fw_id_temp[12];
+-	uint8_t buf[4];
++	uint8_t buf[32];
+ 	uint32_t CURRENT_FIRMWARE_ID = 0 ;
+ 
+         static bool check_onetime = true;
+@@ -2800,17 +2800,19 @@ static DRIVER_ATTR(tp_debug_log, 0664, tp_show, store_tp);
+ static DEVICE_ATTR(tp_fw_update, 0664, synaptics_update_fw_show, synaptics_update_fw_store);
+ static int synaptics_dsx_pinctrl_init(struct synaptics_ts_data *ts);
+ 
+-static ssize_t tp_reset_write_func (struct file *file, const char *buffer, size_t count, loff_t *ppos)
++static ssize_t tp_reset_write_func (struct file *file, const char __user *buffer, size_t count, loff_t *ppos)
+ {
+     int ret,write_flag,i;
+ 	struct synaptics_ts_data *ts = ts_g;
++	char kbuf[16] = {0};
+ 
+ 	if(ts->loading_fw) {
+ 		TPD_ERR("%s FW is updating break!!\n",__func__);
+ 		return count;
+ 	}
+-
+-    ret = sscanf(buffer,"%x",&write_flag);
++	if (count == 0 || count >= sizeof(kbuf)) return -EINVAL;
++	if (copy_from_user(kbuf, buffer, count)) return -EFAULT;
++    ret = sscanf(kbuf,"%x",&write_flag);
+     TPD_ERR("%s write [%d]\n",__func__,write_flag);
+     if (1 == write_flag)
+     {
+@@ -2938,8 +2940,10 @@ static ssize_t changer_write_func(struct file *file, const char __user *buffer,
+ {
+ 	struct synaptics_ts_data *ts= ts_g;
+ 	int ret = 0 ;
+-
+-	sscanf(&buffer[0], "%d", &ret);
++	char kbuf[16] = {0};
++	if (count == 0 || count >= sizeof(kbuf)) return -EINVAL;
++	if (copy_from_user(kbuf, buffer, count)) return -EFAULT;
++	sscanf(kbuf, "%d", &ret);
+ 	if(!ts)
+ 		return count;
+ 	if( (ret == 0 ) || (ret == 1) ){
+@@ -3066,8 +3070,10 @@ static ssize_t touch_press_status_write(struct file *file, const char __user *bu
+ {
+ 	struct synaptics_ts_data *ts= ts_g;
+ 	int ret = 0 ;
+-
+-	sscanf(&buffer[0], "%d", &ret);
++	char kbuf[16] = {0};
++	if (count == 0 || count >= sizeof(kbuf)) return -EINVAL;
++	if (copy_from_user(kbuf, buffer, count)) return -EFAULT;
++	sscanf(kbuf, "%d", &ret);
+ 	if(!ts)
+ 		return count;
+ 
+@@ -3449,7 +3455,7 @@ static int checkFlashState(struct i2c_client *client)
+ static int synaptics_fw_check(struct synaptics_ts_data *ts )
+ {
+ 	int ret;
+-	uint8_t buf[4];
++	uint8_t buf[32];
+ 	uint32_t bootloader_mode;
+ 	int max_y_ic = 0;
+ 	int max_x_ic = 0;
+@@ -4005,7 +4011,7 @@ static int synaptics_ts_probe(struct i2c_client *client, const struct i2c_device
+ #endif
+ 	struct synaptics_ts_data *ts = NULL;
+ 	int ret = -1;
+-	uint8_t buf[4];
++	uint8_t buf[32];
+ 	uint32_t CURRENT_FIRMWARE_ID = 0;
+ 	uint32_t bootloader_mode;
+ 
+diff --git a/drivers/leds/leds-qpnp.c b/drivers/leds/leds-qpnp.c
+index deec2c4e..62273fc8 100644
+--- a/drivers/leds/leds-qpnp.c
++++ b/drivers/leds/leds-qpnp.c
+@@ -26,6 +26,23 @@
+ #include <linux/workqueue.h>
+ #include <linux/delay.h>
+ #include <linux/regulator/consumer.h>
++
++extern struct device *qcom_soc_legacy_dev(const char *name);
++
++static struct device *legacy_led_parent(const char *name, struct device *orig)
++{
++	struct device *compat = NULL;
++
++	if (!name)
++		return orig;
++	if (!strcmp(name, "button-backlight"))
++		compat = qcom_soc_legacy_dev("leds-qpnp-18");
++	else if (!strcmp(name, "red") || !strcmp(name, "green") ||
++		 !strcmp(name, "blue") || !strcmp(name, "rgb"))
++		compat = qcom_soc_legacy_dev("leds-qpnp-25");
++
++	return compat ? compat : orig;
++}
+ #include <linux/delay.h>
+ 
+ #define WLED_MOD_EN_REG(base, n)	(base + 0x60 + n*0x10)
+@@ -4045,7 +4062,7 @@ static int qpnp_leds_probe(struct platform_device *pdev)
+ 		}
+ 		rgb_sync->cdev.name = "rgb";
+ 		rgb_sync->pdev = pdev;
+-		rc = led_classdev_register(&pdev->dev, &rgb_sync->cdev);
++		rc = led_classdev_register(legacy_led_parent(rgb_sync->cdev.name, &pdev->dev), &rgb_sync->cdev);
+ 		if (rc) {
+ 			dev_err(&pdev->dev, "unable to register rgb %d\n", rc);
+ 			goto fail_id_check;
+@@ -4200,7 +4217,7 @@ static int qpnp_leds_probe(struct platform_device *pdev)
+ 		if (rc < 0)
+ 			goto fail_id_check;
+ 
+-		rc = led_classdev_register(&pdev->dev, &led->cdev);
++		rc = led_classdev_register(legacy_led_parent(led->cdev.name, &pdev->dev), &led->cdev);
+ 		if (rc) {
+ 			dev_err(&pdev->dev,
+ 				"unable to register led %d,rc=%d\n",
+diff --git a/drivers/power/power_supply_core.c b/drivers/power/power_supply_core.c
+index 6fe4630c..8a13e074 100644
+--- a/drivers/power/power_supply_core.c
++++ b/drivers/power/power_supply_core.c
+@@ -19,8 +19,114 @@
+ #include <linux/err.h>
+ #include <linux/power_supply.h>
+ #include <linux/thermal.h>
++#include <linux/platform_device.h>
++#include <linux/mutex.h>
+ #include "power_supply.h"
+ 
++struct qcom_legacy_entry {
++	const char *name;
++	struct device *dev;
++};
++
++static DEFINE_MUTEX(qcom_legacy_lock);
++static struct qcom_legacy_entry qcom_legacy_devs[] = {
++	{ "qpnp-smbcharger-16", NULL },
++	{ "qpnp-fg-17", NULL },
++	{ "msm-bcl-14", NULL },
++	{ "leds-qpnp-18", NULL },
++	{ "leds-qpnp-25", NULL },
++};
++
++static void qcom_legacy_dev_release(struct device *dev)
++{
++	kfree(dev);
++}
++
++struct device *qcom_soc_legacy_dev(const char *name)
++{
++	static struct device *cached_soc;
++	static struct device *cached_ssusb;
++	struct device *pdev;
++	int i, rc;
++
++	if (!name)
++		return NULL;
++
++	mutex_lock(&qcom_legacy_lock);
++	if (!strcmp(name, "6a00000.ssusb")) {
++		if (!cached_ssusb)
++			cached_ssusb = bus_find_device_by_name(&platform_bus_type,
++							     NULL, "6a00000.ssusb");
++		mutex_unlock(&qcom_legacy_lock);
++		return cached_ssusb;
++	}
++
++	for (i = 0; i < ARRAY_SIZE(qcom_legacy_devs); i++) {
++		if (strcmp(qcom_legacy_devs[i].name, name))
++			continue;
++		if (qcom_legacy_devs[i].dev) {
++			pdev = qcom_legacy_devs[i].dev;
++			mutex_unlock(&qcom_legacy_lock);
++			return pdev;
++		}
++		if (!cached_soc) {
++			cached_soc = bus_find_device_by_name(&platform_bus_type,
++							   NULL, "soc");
++			if (!cached_soc) {
++				struct device *u = bus_find_device_by_name(
++					&platform_bus_type, NULL, "6a00000.ssusb");
++				if (u) {
++					cached_soc = get_device(u->parent);
++					put_device(u);
++				}
++			}
++		}
++		if (!cached_soc) {
++			mutex_unlock(&qcom_legacy_lock);
++			return NULL;
++		}
++		pdev = kzalloc(sizeof(*pdev), GFP_KERNEL);
++		if (!pdev) {
++			mutex_unlock(&qcom_legacy_lock);
++			return NULL;
++		}
++		device_initialize(pdev);
++		pdev->parent = cached_soc;
++		pdev->release = qcom_legacy_dev_release;
++		dev_set_name(pdev, "%s", qcom_legacy_devs[i].name);
++		rc = device_add(pdev);
++		if (rc) {
++			put_device(pdev);
++			mutex_unlock(&qcom_legacy_lock);
++			return NULL;
++		}
++		qcom_legacy_devs[i].dev = pdev;
++		mutex_unlock(&qcom_legacy_lock);
++		return pdev;
++	}
++	mutex_unlock(&qcom_legacy_lock);
++	return NULL;
++}
++EXPORT_SYMBOL_GPL(qcom_soc_legacy_dev);
++
++static struct device *legacy_psy_parent(const char *name, struct device *orig)
++{
++	struct device *compat = NULL;
++
++	if (!name)
++		return orig;
++	if (!strcmp(name, "battery") || !strcmp(name, "dc"))
++		compat = qcom_soc_legacy_dev("qpnp-smbcharger-16");
++	else if (!strcmp(name, "bms"))
++		compat = qcom_soc_legacy_dev("qpnp-fg-17");
++	else if (!strcmp(name, "fg_adc"))
++		compat = qcom_soc_legacy_dev("msm-bcl-14");
++	else if (!strcmp(name, "usb"))
++		compat = qcom_soc_legacy_dev("6a00000.ssusb");
++
++	return compat ? compat : orig;
++}
++
+ /* exported for the APM Power driver, APM emulation */
+ struct class *power_supply_class;
+ EXPORT_SYMBOL_GPL(power_supply_class);
+@@ -729,7 +835,7 @@ __power_supply_register(struct device *parent,
+ 
+ 	dev->class = power_supply_class;
+ 	dev->type = &power_supply_dev_type;
+-	dev->parent = parent;
++	dev->parent = legacy_psy_parent(desc->name, parent);
+ 	dev->release = power_supply_dev_release;
+ 	dev_set_drvdata(dev, psy);
+ 	psy->desc = desc;
+diff --git a/drivers/scsi/ufs/ufs-qcom-ice.c b/drivers/scsi/ufs/ufs-qcom-ice.c
+index d288e83e..c673d741 100644
+--- a/drivers/scsi/ufs/ufs-qcom-ice.c
++++ b/drivers/scsi/ufs/ufs-qcom-ice.c
+@@ -376,8 +376,7 @@ int ufs_qcom_ice_cfg_start(struct ufs_qcom_host *qcom_host,
+ 
+ 	req = cmd->request;
+ 	if (req->bio)
+-		lba = (req->bio->bi_iter.bi_sector) >>
+-			UFS_QCOM_ICE_TR_DATA_UNIT_4_KB;
++		lba = req->bio->bi_iter.bi_sector;
+ 
+ 	slot = req->tag;
+ 	if (slot < 0 || slot > qcom_host->hba->nutrs) {
+@@ -469,7 +468,8 @@ int ufs_qcom_ice_cfg_start(struct ufs_qcom_host *qcom_host,
+ 
+ 	/* Configure data unit size of transfer request */
+ 	ctrl_info_val |=
+-		UFS_QCOM_ICE_TR_DATA_UNIT_4_KB
++		(UFS_QCOM_ICE_TR_DATA_UNIT_4_KB &
++		 MASK_UFS_QCOM_ICE_CTRL_INFO_CDU)
+ 		 << OFFSET_UFS_QCOM_ICE_CTRL_INFO_CDU;
+ 
+ 	/* Configure ICE bypass mode */
+diff --git a/drivers/scsi/ufs/ufs-qcom.c b/drivers/scsi/ufs/ufs-qcom.c
+index e1509b2b..3931f217 100644
+--- a/drivers/scsi/ufs/ufs-qcom.c
++++ b/drivers/scsi/ufs/ufs-qcom.c
+@@ -901,8 +901,7 @@ static int ufs_qcom_crypto_req_setup(struct ufs_hba *hba,
+ 
+ 	/* Use request LBA as the DUN value */
+ 	if (req->bio)
+-		*dun = (req->bio->bi_iter.bi_sector) >>
+-				UFS_QCOM_ICE_TR_DATA_UNIT_4_KB;
++		*dun = req->bio->bi_iter.bi_sector;
+ 
+ 	ret = ufs_qcom_ice_req_setup(host, lrbp->cmd, cc_index, enable);
+ 
+-- 
+2.34.1
+
