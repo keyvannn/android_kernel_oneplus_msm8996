@@ -1,0 +1,54 @@
+name: Build OnePlus 3 Kernel (4.4.302-cip112 LineageOS 24 / eBPF)
+
+on:
+  push:
+    branches: [ lineage-24.0, op3-lineage-24.0 ]
+  pull_request:
+    branches: [ lineage-24.0, op3-lineage-24.0 ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison flex libssl-dev libelf-dev python-is-python3 \
+            gcc-9-aarch64-linux-gnu gcc-arm-linux-gnueabi cpio kmod zip unzip curl ccache
+
+      - name: Configure and build Image.gz-dtb
+        run: |
+          mkdir -p out
+          make O=out ARCH=arm64 SUBARCH=arm64 lineageos_oneplus3_defconfig
+          make O=out ARCH=arm64 SUBARCH=arm64 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            CC="aarch64-linux-gnu-gcc-9" \
+            KCFLAGS="-Wno-error" \
+            -j$(nproc) Image.gz-dtb
+
+      - name: Package AnyKernel3 TWRP zip
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git ak3
+          rm -rf ak3/.git ak3/.github ak3/README.md
+          cp out/arch/arm64/boot/Image.gz-dtb ak3/
+          sed -i "s/^kernel.string=.*/kernel.string=Linux 4.4.302-cip112 + Android 17 eBPF for OnePlus 3\/3T/" ak3/anykernel.sh
+          sed -i "s/^do.devicecheck=.*/do.devicecheck=1/" ak3/anykernel.sh
+          sed -i "s/^device.name1=.*/device.name1=OnePlus3/" ak3/anykernel.sh
+          sed -i "s/^device.name2=.*/device.name2=OnePlus3T/" ak3/anykernel.sh
+          sed -i "s/BLOCK=.*/BLOCK=boot;/" ak3/anykernel.sh
+          sed -i "s/IS_SLOT_DEVICE=.*/IS_SLOT_DEVICE=0;/" ak3/anykernel.sh
+          (cd ak3 && zip -r9 ../OnePlus3_Kernel_4.4.302_CIP112_Android17eBPF_TWRP.zip .)
+
+      - name: Upload kernel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OnePlus3-Kernel-4.4.302-cip112
+          path: |
+            out/arch/arm64/boot/Image.gz-dtb
+            OnePlus3_Kernel_4.4.302_CIP112_Android17eBPF_TWRP.zip
