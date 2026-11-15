@@ -499,7 +499,7 @@ struct synaptics_ts_data {
     bool support_ft;//support force touch
 	char fw_name[TP_FW_NAME_MAX_LEN];
 	char test_limit_name[TP_FW_NAME_MAX_LEN];
-	char manu_name[10];
+	char manu_name[32];
 
 	ktime_t timestamp;
 };
@@ -626,7 +626,7 @@ static int tpd_power(struct synaptics_ts_data *ts, unsigned int on)
 
 static int synaptics_read_register_map(struct synaptics_ts_data *ts)
 {
-	uint8_t buf[4];
+	uint8_t buf[32];
 	int ret;
 	memset(buf, 0, sizeof(buf));
 	ret = synaptics_rmi4_i2c_write_byte( ts->client, 0xff, 0x0 );
@@ -1136,7 +1136,7 @@ static void gesture_judge(struct synaptics_ts_data *ts)
 	unsigned int keyCode = KEY_F4;
 	int ret = 0,gesture_sign, regswipe;
 	uint8_t gesture_buffer[10];
-	unsigned char reportbuf[3];
+	unsigned char reportbuf[16];
         if(version_is_s3508)
 		F12_2D_DATA04 = 0x0008;
 	else
@@ -2599,7 +2599,7 @@ static int synatpitcs_fw_update(struct device *dev, bool force)
 	const struct firmware *fw = NULL;
 	int ret;
 	char fw_id_temp[12];
-	uint8_t buf[4];
+	uint8_t buf[32];
 	uint32_t CURRENT_FIRMWARE_ID = 0 ;
 
         static bool check_onetime = true;
@@ -2800,17 +2800,19 @@ static DRIVER_ATTR(tp_debug_log, 0664, tp_show, store_tp);
 static DEVICE_ATTR(tp_fw_update, 0664, synaptics_update_fw_show, synaptics_update_fw_store);
 static int synaptics_dsx_pinctrl_init(struct synaptics_ts_data *ts);
 
-static ssize_t tp_reset_write_func (struct file *file, const char *buffer, size_t count, loff_t *ppos)
+static ssize_t tp_reset_write_func (struct file *file, const char __user *buffer, size_t count, loff_t *ppos)
 {
     int ret,write_flag,i;
 	struct synaptics_ts_data *ts = ts_g;
+	char kbuf[16] = {0};
 
 	if(ts->loading_fw) {
 		TPD_ERR("%s FW is updating break!!\n",__func__);
 		return count;
 	}
-
-    ret = sscanf(buffer,"%x",&write_flag);
+	if (count == 0 || count >= sizeof(kbuf)) return -EINVAL;
+	if (copy_from_user(kbuf, buffer, count)) return -EFAULT;
+    ret = sscanf(kbuf,"%x",&write_flag);
     TPD_ERR("%s write [%d]\n",__func__,write_flag);
     if (1 == write_flag)
     {
@@ -2938,8 +2940,10 @@ static ssize_t changer_write_func(struct file *file, const char __user *buffer, 
 {
 	struct synaptics_ts_data *ts= ts_g;
 	int ret = 0 ;
-
-	sscanf(&buffer[0], "%d", &ret);
+	char kbuf[16] = {0};
+	if (count == 0 || count >= sizeof(kbuf)) return -EINVAL;
+	if (copy_from_user(kbuf, buffer, count)) return -EFAULT;
+	sscanf(kbuf, "%d", &ret);
 	if(!ts)
 		return count;
 	if( (ret == 0 ) || (ret == 1) ){
@@ -3066,8 +3070,10 @@ static ssize_t touch_press_status_write(struct file *file, const char __user *bu
 {
 	struct synaptics_ts_data *ts= ts_g;
 	int ret = 0 ;
-
-	sscanf(&buffer[0], "%d", &ret);
+	char kbuf[16] = {0};
+	if (count == 0 || count >= sizeof(kbuf)) return -EINVAL;
+	if (copy_from_user(kbuf, buffer, count)) return -EFAULT;
+	sscanf(kbuf, "%d", &ret);
 	if(!ts)
 		return count;
 
@@ -3449,7 +3455,7 @@ static int checkFlashState(struct i2c_client *client)
 static int synaptics_fw_check(struct synaptics_ts_data *ts )
 {
 	int ret;
-	uint8_t buf[4];
+	uint8_t buf[32];
 	uint32_t bootloader_mode;
 	int max_y_ic = 0;
 	int max_x_ic = 0;
@@ -4005,7 +4011,7 @@ static int synaptics_ts_probe(struct i2c_client *client, const struct i2c_device
 #endif
 	struct synaptics_ts_data *ts = NULL;
 	int ret = -1;
-	uint8_t buf[4];
+	uint8_t buf[32];
 	uint32_t CURRENT_FIRMWARE_ID = 0;
 	uint32_t bootloader_mode;
 

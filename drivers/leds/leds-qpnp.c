@@ -26,6 +26,23 @@
 #include <linux/workqueue.h>
 #include <linux/delay.h>
 #include <linux/regulator/consumer.h>
+
+extern struct device *qcom_soc_legacy_dev(const char *name);
+
+static struct device *legacy_led_parent(const char *name, struct device *orig)
+{
+	struct device *compat = NULL;
+
+	if (!name)
+		return orig;
+	if (!strcmp(name, "button-backlight"))
+		compat = qcom_soc_legacy_dev("leds-qpnp-18");
+	else if (!strcmp(name, "red") || !strcmp(name, "green") ||
+		 !strcmp(name, "blue") || !strcmp(name, "rgb"))
+		compat = qcom_soc_legacy_dev("leds-qpnp-25");
+
+	return compat ? compat : orig;
+}
 #include <linux/delay.h>
 
 #define WLED_MOD_EN_REG(base, n)	(base + 0x60 + n*0x10)
@@ -4045,7 +4062,7 @@ static int qpnp_leds_probe(struct platform_device *pdev)
 		}
 		rgb_sync->cdev.name = "rgb";
 		rgb_sync->pdev = pdev;
-		rc = led_classdev_register(&pdev->dev, &rgb_sync->cdev);
+		rc = led_classdev_register(legacy_led_parent(rgb_sync->cdev.name, &pdev->dev), &rgb_sync->cdev);
 		if (rc) {
 			dev_err(&pdev->dev, "unable to register rgb %d\n", rc);
 			goto fail_id_check;
@@ -4200,7 +4217,7 @@ static int qpnp_leds_probe(struct platform_device *pdev)
 		if (rc < 0)
 			goto fail_id_check;
 
-		rc = led_classdev_register(&pdev->dev, &led->cdev);
+		rc = led_classdev_register(legacy_led_parent(led->cdev.name, &pdev->dev), &led->cdev);
 		if (rc) {
 			dev_err(&pdev->dev,
 				"unable to register led %d,rc=%d\n",

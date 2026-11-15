@@ -1090,6 +1090,7 @@
 
 &firmware {
 	android {
+		/delete-node/ vbmeta;
 		fstab {
 			system {
 				compatible = "android,system";
@@ -2296,7 +2297,7 @@
 
 &pmi8994_haptics {
 	status = "okay";
-	qcom,actuator-type = <1>;
+	qcom,actuator-type = "erm";
 	qcom,vmax-mv = <2700>;
 };
 

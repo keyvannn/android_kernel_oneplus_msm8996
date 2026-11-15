@@ -19,7 +19,113 @@
 #include <linux/err.h>
 #include <linux/power_supply.h>
 #include <linux/thermal.h>
+#include <linux/platform_device.h>
+#include <linux/mutex.h>
 #include "power_supply.h"
+
+struct qcom_legacy_entry {
+	const char *name;
+	struct device *dev;
+};
+
+static DEFINE_MUTEX(qcom_legacy_lock);
+static struct qcom_legacy_entry qcom_legacy_devs[] = {
+	{ "qpnp-smbcharger-16", NULL },
+	{ "qpnp-fg-17", NULL },
+	{ "msm-bcl-14", NULL },
+	{ "leds-qpnp-18", NULL },
+	{ "leds-qpnp-25", NULL },
+};
+
+static void qcom_legacy_dev_release(struct device *dev)
+{
+	kfree(dev);
+}
+
+struct device *qcom_soc_legacy_dev(const char *name)
+{
+	static struct device *cached_soc;
+	static struct device *cached_ssusb;
+	struct device *pdev;
+	int i, rc;
+
+	if (!name)
+		return NULL;
+
+	mutex_lock(&qcom_legacy_lock);
+	if (!strcmp(name, "6a00000.ssusb")) {
+		if (!cached_ssusb)
+			cached_ssusb = bus_find_device_by_name(&platform_bus_type,
+							     NULL, "6a00000.ssusb");
+		mutex_unlock(&qcom_legacy_lock);
+		return cached_ssusb;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(qcom_legacy_devs); i++) {
+		if (strcmp(qcom_legacy_devs[i].name, name))
+			continue;
+		if (qcom_legacy_devs[i].dev) {
+			pdev = qcom_legacy_devs[i].dev;
+			mutex_unlock(&qcom_legacy_lock);
+			return pdev;
+		}
+		if (!cached_soc) {
+			cached_soc = bus_find_device_by_name(&platform_bus_type,
+							   NULL, "soc");
+			if (!cached_soc) {
+				struct device *u = bus_find_device_by_name(
+					&platform_bus_type, NULL, "6a00000.ssusb");
+				if (u) {
+					cached_soc = get_device(u->parent);
+					put_device(u);
+				}
+			}
+		}
+		if (!cached_soc) {
+			mutex_unlock(&qcom_legacy_lock);
+			return NULL;
+		}
+		pdev = kzalloc(sizeof(*pdev), GFP_KERNEL);
+		if (!pdev) {
+			mutex_unlock(&qcom_legacy_lock);
+			return NULL;
+		}
+		device_initialize(pdev);
+		pdev->parent = cached_soc;
+		pdev->release = qcom_legacy_dev_release;
+		dev_set_name(pdev, "%s", qcom_legacy_devs[i].name);
+		rc = device_add(pdev);
+		if (rc) {
+			put_device(pdev);
+			mutex_unlock(&qcom_legacy_lock);
+			return NULL;
+		}
+		qcom_legacy_devs[i].dev = pdev;
+		mutex_unlock(&qcom_legacy_lock);
+		return pdev;
+	}
+	mutex_unlock(&qcom_legacy_lock);
+	return NULL;
+}
+EXPORT_SYMBOL_GPL(qcom_soc_legacy_dev);
+
+static struct device *legacy_psy_parent(const char *name, struct device *orig)
+{
+	struct device *compat = NULL;
+
+	if (!name)
+		return orig;
+	if (!strcmp(name, "battery") || !strcmp(name, "dc"))
+		compat = qcom_soc_legacy_dev("qpnp-smbcharger-16");
+	else if (!strcmp(name, "bms"))
+		compat = qcom_soc_legacy_dev("qpnp-fg-17");
+	else if (!strcmp(name, "fg_adc"))
+		compat = qcom_soc_legacy_dev("msm-bcl-14");
+	else if (!strcmp(name, "usb"))
+		compat = qcom_soc_legacy_dev("6a00000.ssusb");
+
+	return compat ? compat : orig;
+}
 
 /* exported for the APM Power driver, APM emulation */
 struct class *power_supply_class;
@@ -729,7 +835,7 @@ __power_supply_register(struct device *parent,
 
 	dev->class = power_supply_class;
 	dev->type = &power_supply_dev_type;
-	dev->parent = parent;
+	dev->parent = legacy_psy_parent(desc->name, parent);
 	dev->release = power_supply_dev_release;
 	dev_set_drvdata(dev, psy);
 	psy->desc = desc;

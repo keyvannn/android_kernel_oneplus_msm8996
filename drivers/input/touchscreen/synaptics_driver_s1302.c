@@ -302,8 +302,8 @@ struct synaptics_ts_data {
 	bool suspended;
 	bool loading_fw;
 	char fw_name[TP_FW_NAME_MAX_LEN];
-	char fw_id[12];
-	char manu_name[12];
+	char fw_id[32];
+	char manu_name[32];
 
 	struct work_struct pm_work;
 };
@@ -387,7 +387,7 @@ static int tc_power(struct synaptics_ts_data *ts, unsigned int on)
 
 static int synaptics_read_register_map(struct synaptics_ts_data *ts)
 {
-	uint8_t buf[4];
+	uint8_t buf[32];
 	int ret;
 	memset(buf, 0, sizeof(buf));
 	ret = synaptics_rmi4_i2c_write_byte( ts->client, 0xff, 0x0 );
@@ -472,7 +472,7 @@ static int synaptics_read_register_map(struct synaptics_ts_data *ts)
 
 static int synaptics_read_product_id(struct synaptics_ts_data *ts,char *id)
 {
-	uint8_t buf[10]={ 0 };
+	uint8_t buf[32]={ 0 };
 	int ret ;
 
 	ret = synaptics_rmi4_i2c_write_byte(ts->client, 0xff, 0x0);
@@ -485,7 +485,7 @@ static int synaptics_read_product_id(struct synaptics_ts_data *ts,char *id)
 		TPD_ERR("synaptics_read_product_id error %s\n",&buf[0]);
 		return -1;
 	}
-	memcpy(id,&buf[0],sizeof(buf));
+	memcpy(id,&buf[0],10);
 	TPD_ERR("product id is %s\n",&buf[0]);
 	return 0;
 }
@@ -917,7 +917,7 @@ static int synatpitcs_fw_update(struct device *dev, bool force)
 	const struct firmware *fw = NULL;
 	int ret;
 	char fw_id_temp[12];
-	uint8_t buf[4];
+	uint8_t buf[32];
 	uint32_t CURRENT_FIRMWARE_ID = 0 ;
 
 	TPD_DEBUG("%s is called\n",__func__);
@@ -971,7 +971,7 @@ static ssize_t synaptics_s1302_fw_write(struct file *file, const char __user *pa
 {
 	int val = 0;
 	struct synaptics_ts_data *ts = tc_g;
-	char buf[32];
+	char buf[32] = {0};
 
     if (NULL == tc_g)
         return -EINVAL;
@@ -1126,17 +1126,19 @@ const struct file_operations proc_radd =
     .llseek     = seq_lseek,
     .release    = single_release,
 };
-static ssize_t synaptics_s1302_reset_write (struct file *file, const char *buffer, size_t count, loff_t *ppos)
+static ssize_t synaptics_s1302_reset_write (struct file *file, const char __user *buffer, size_t count, loff_t *ppos)
 {
     int ret,write_flag;
 	struct synaptics_ts_data *ts = tc_g;
+	char kbuf[16] = {0};
 
 	if(ts->loading_fw) {
 		TPD_ERR("%s FW is updating break!!\n",__func__);
 		return count;
 	}
-
-    ret = sscanf(buffer,"%x",&write_flag);
+	if (count == 0 || count >= sizeof(kbuf)) return -EINVAL;
+	if (copy_from_user(kbuf, buffer, count)) return -EFAULT;
+    ret = sscanf(kbuf,"%x",&write_flag);
     TPD_ERR("%s write %d\n",__func__,write_flag);
     if (1 == write_flag)
     {
@@ -1176,11 +1178,13 @@ const struct file_operations proc_reset =
     .llseek     = seq_lseek,
     .release    = single_release,
 };
-static ssize_t synaptics_s1302_debug_write (struct file *file, const char *buffer, size_t count, loff_t *ppos)
+static ssize_t synaptics_s1302_debug_write (struct file *file, const char __user *buffer, size_t count, loff_t *ppos)
 {
     int ret,write_flag;
-
-    ret = sscanf(buffer,"%x",&write_flag);
+    char kbuf[16] = {0};
+    if (count == 0 || count >= sizeof(kbuf)) return -EINVAL;
+    if (copy_from_user(kbuf, buffer, count)) return -EFAULT;
+    ret = sscanf(kbuf,"%x",&write_flag);
     TPD_ERR("%s write %d\n",__func__,write_flag);
     tp_debug = write_flag?1:0;
 	return count;
@@ -1206,10 +1210,13 @@ const struct file_operations proc_debug =
     .release    = single_release,
 };
 
-static ssize_t synaptics_s1302_wait_time_write (struct file *file, const char *buffer, size_t count, loff_t *ppos)
+static ssize_t synaptics_s1302_wait_time_write (struct file *file, const char __user *buffer, size_t count, loff_t *ppos)
 {
 	int ret,write_flag;
-	ret = sscanf(buffer,"%d",&write_flag);
+	char kbuf[16] = {0};
+	if (count == 0 || count >= sizeof(kbuf)) return -EINVAL;
+	if (copy_from_user(kbuf, buffer, count)) return -EFAULT;
+	ret = sscanf(kbuf,"%d",&write_flag);
 	TPD_ERR("%s write %d\n",__func__,write_flag);
 	touchkey_wait_time = write_flag;
 	return count;
@@ -1693,7 +1700,7 @@ static int checkFlashState(struct i2c_client *client)
 static int synaptics_fw_check(struct synaptics_ts_data *ts )
 {
 	int ret;
-	uint8_t buf[5];
+	uint8_t buf[32];
 	uint32_t bootloader_mode;
 
 	if(!ts){
@@ -2029,7 +2036,7 @@ static int synaptics_ts_probe(struct i2c_client *client, const struct i2c_device
 #endif
 	struct synaptics_ts_data *ts = NULL;
 	int ret = -1;
-	uint8_t buf[4];
+	uint8_t buf[32];
 	uint32_t CURRENT_FIRMWARE_ID = 0;
 	uint32_t bootloader_mode;
 

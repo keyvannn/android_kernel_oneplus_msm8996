@@ -376,8 +376,7 @@ int ufs_qcom_ice_cfg_start(struct ufs_qcom_host *qcom_host,
 
 	req = cmd->request;
 	if (req->bio)
-		lba = (req->bio->bi_iter.bi_sector) >>
-			UFS_QCOM_ICE_TR_DATA_UNIT_4_KB;
+		lba = req->bio->bi_iter.bi_sector;
 
 	slot = req->tag;
 	if (slot < 0 || slot > qcom_host->hba->nutrs) {
@@ -469,7 +468,8 @@ int ufs_qcom_ice_cfg_start(struct ufs_qcom_host *qcom_host,
 
 	/* Configure data unit size of transfer request */
 	ctrl_info_val |=
-		UFS_QCOM_ICE_TR_DATA_UNIT_4_KB
+		(UFS_QCOM_ICE_TR_DATA_UNIT_4_KB &
+		 MASK_UFS_QCOM_ICE_CTRL_INFO_CDU)
 		 << OFFSET_UFS_QCOM_ICE_CTRL_INFO_CDU;
 
 	/* Configure ICE bypass mode */
