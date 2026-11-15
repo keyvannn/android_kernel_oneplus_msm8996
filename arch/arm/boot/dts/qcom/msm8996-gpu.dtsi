@@ -67,7 +67,7 @@
 
 		qcom,initial-pwrlevel = <2>;
 
-		qcom,idle-timeout = <64>;
+		qcom,idle-timeout = <80>; //msecs
 		/*
 		 * Timeout to enter deeper power saving state
 		 * from NAP.
@@ -81,7 +81,6 @@
 
 		qcom,gpu-qdss-stm = <0x081c0000 0x40000>; // base addr, size
 
-		qcom,tsens-name = "tsens_tz_sensor14";
 		/* Trace bus */
 		coresight-id = <300>;
 		coresight-name = "coresight-gfx";
