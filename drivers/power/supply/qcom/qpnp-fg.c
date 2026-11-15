@@ -250,7 +250,7 @@ static struct fg_mem_setting settings[FG_MEM_SETTING_MAX] = {
 	SETTING(TERM_CURRENT,	 0x40C,   2,      250),
 	SETTING(CHG_TERM_CURRENT, 0x4F8,   2,      250),
 	SETTING(IRQ_VOLT_EMPTY,	 0x458,   3,      3100),
-	SETTING(CUTOFF_VOLTAGE,	 0x40C,   0,      3200),
+	SETTING(CUTOFF_VOLTAGE,	 0x40C,   0,      3400),
 	SETTING(VBAT_EST_DIFF,	 0x000,   0,      30),
 	SETTING(DELTA_SOC,	 0x450,   3,      1),
 	SETTING(BATT_LOW,	 0x458,   0,      4200),
@@ -2650,6 +2650,20 @@ out:
 	return rc;
 }
 
+// Read the beat count and write it into the beat_count arg;
+// return non-zero on failure.
+static int read_beat(struct fg_chip *chip, u8 *beat_count)
+{
+	int rc = fg_read(chip, beat_count,
+			 chip->mem_base + MEM_INTF_FG_BEAT_COUNT, 1);
+	if (rc)
+		pr_err("failed to read beat count rc=%d\n", rc);
+	else if (fg_debug_mask & FG_STATUS)
+		pr_info("current: %d, prev: %d\n", *beat_count,
+			chip->last_beat_count);
+	return rc;
+}
+
 #define SANITY_CHECK_PERIOD_MS	5000
 static void check_sanity_work(struct work_struct *work)
 {
@@ -2660,19 +2674,24 @@ static void check_sanity_work(struct work_struct *work)
 	u8 beat_count;
 	bool tried_once = false;
 
+	// Try one beat check once up-front to avoid the common
+	// case where the beat has changed and we don't need to hold
+	// the chip awake.
+	rc = read_beat(chip, &beat_count);
+	if (rc == 0 && chip->last_beat_count != beat_count) {
+		chip->last_beat_count = beat_count;
+		schedule_delayed_work(
+			&chip->check_sanity_work,
+			msecs_to_jiffies(SANITY_CHECK_PERIOD_MS));
+		return;
+	}
+
 	fg_stay_awake(&chip->sanity_wakeup_source);
 
 try_again:
-	rc = fg_read(chip, &beat_count,
-			chip->mem_base + MEM_INTF_FG_BEAT_COUNT, 1);
-	if (rc) {
-		pr_err("failed to read beat count rc=%d\n", rc);
+	rc = read_beat(chip, &beat_count);
+	if (rc)
 		goto resched;
-	}
-
-	if (fg_debug_mask & FG_STATUS)
-		pr_info("current: %d, prev: %d\n", beat_count,
-			chip->last_beat_count);
 
 	if (chip->last_beat_count == beat_count) {
 		if (!tried_once) {

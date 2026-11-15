@@ -34,17 +34,14 @@
 
 #include "power.h"
 
-/*qiuchangping@BSP 2016-05-19
-  add for when sync filesystem take long time and AP hold sensor
-  sometime sensor data will block the sleep process alway*/
 #include <linux/gpio.h>
-
-/*the same value come from smp2p_sleepstate.c file*/
 extern int slst_gpio_base_id;
 #define PROC_AWAKE_ID 12 /* 12th bit */
 
 const char *pm_labels[] = { "mem", "standby", "freeze", NULL };
 const char *pm_states[PM_SUSPEND_MAX];
+suspend_state_t pm_suspend_target_state;
+EXPORT_SYMBOL_GPL(pm_suspend_target_state);
 
 unsigned int pm_suspend_global_flags;
 EXPORT_SYMBOL_GPL(pm_suspend_global_flags);
@@ -324,8 +321,6 @@ void __weak arch_suspend_enable_irqs(void)
  *
  * This function should be called after devices have been suspended.
  */
-//huruihuan add for speed up resume
-extern void thaw_fingerprintd(void);
 static int suspend_enter(suspend_state_t state, bool *wakeup)
 {
 	int error, last_dev;
@@ -411,8 +406,6 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 
  Platform_wake:
 	platform_resume_noirq(state);
-//huruihuan add for speed up resume
-	thaw_fingerprintd();
 	dpm_resume_noirq(PMSG_RESUME);
 
  Platform_early_resume:
@@ -437,6 +430,8 @@ int suspend_devices_and_enter(suspend_state_t state)
 
 	if (!sleep_state_supported(state))
 		return -ENOSYS;
+
+	pm_suspend_target_state = state;
 
 	error = platform_suspend_begin(state);
 	if (error)
@@ -468,6 +463,7 @@ int suspend_devices_and_enter(suspend_state_t state)
 
  Close:
 	platform_resume_end(state);
+	pm_suspend_target_state = PM_SUSPEND_ON;
 	return error;
 
  Recover_platform:
@@ -576,21 +572,9 @@ int pm_suspend(suspend_state_t state)
 		return -EINVAL;
 
 	pm_suspend_marker("entry");
-
-    /*qiuchangping@BSP 2016-05-19
-      add for when sync filesystem take long time and AP hold sensor
-      sometime sensor data will block the sleep process alway*/
-    gpio_set_value(slst_gpio_base_id + PROC_AWAKE_ID, 0);
-    /*pr_err("yyyyyy %s: PM_SUSPEND_PREPARE %d \n", __func__, slst_gpio_base_id + PROC_AWAKE_ID);*/
-
+	gpio_set_value(slst_gpio_base_id + PROC_AWAKE_ID, 0);
 	error = enter_state(state);
-
-    /*qiuchangping@BSP 2016-05-19
-      add for when sync filesystem take long time and AP hold sensor
-      sometime sensor data will block the sleep process alway*/
-    gpio_set_value(slst_gpio_base_id + PROC_AWAKE_ID, 1);
-    /*pr_err("yyyyyy %s: PM_POST_SUSPEND %d \n", __func__, slst_gpio_base_id + PROC_AWAKE_ID);*/
-
+	gpio_set_value(slst_gpio_base_id + PROC_AWAKE_ID, 1);
 	if (error) {
 		suspend_stats.fail++;
 		dpm_save_failed_errno(error);

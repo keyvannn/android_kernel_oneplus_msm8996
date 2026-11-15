@@ -22,7 +22,7 @@
 	    "audit_control", "setfcap"
 
 #define COMMON_CAP2_PERMS  "mac_override", "mac_admin", "syslog", \
-		"wake_alarm", "block_suspend", "audit_read"
+		"wake_alarm", "block_suspend", "audit_read", "perfmon", "bpf"
 
 /*
  * Note: The name for any socket class should be suffixed by "socket",
@@ -105,7 +105,8 @@ struct security_class_mapping secclass_map[] = {
 	  { COMMON_IPC_PERMS, NULL } },
 	{ "netlink_route_socket",
 	  { COMMON_SOCK_PERMS,
-	    "nlmsg_read", "nlmsg_write", "nlmsg_readpriv", NULL } },
+	    "nlmsg_read", "nlmsg_write", "nlmsg_readpriv", "nlmsg_getneigh",
+	    NULL } },
 	{ "netlink_tcpdiag_socket",
 	  { COMMON_SOCK_PERMS,
 	    "nlmsg_read", "nlmsg_write", NULL } },
@@ -168,6 +169,8 @@ struct security_class_mapping secclass_map[] = {
 	{ "bpf",
 	  { "map_create", "map_read", "map_write", "prog_load", "prog_run" } },
 	{ "can_socket",
+	  { COMMON_SOCK_PERMS, NULL } },
+	{ "xdp_socket",
 	  { COMMON_SOCK_PERMS, NULL } },
 	{ NULL }
   };

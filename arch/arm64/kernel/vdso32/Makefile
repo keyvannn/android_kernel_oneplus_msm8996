@@ -5,11 +5,7 @@
 # A mix between the arm64 and arm vDSO Makefiles.
 
 ifeq ($(cc-name),clang)
-  CC_ARM32 := $(CC) $(CLANG_TARGET_ARM32) -no-integrated-as
-  GCC_ARM32_TC := $(realpath $(dir $(shell which $(CROSS_COMPILE_ARM32)ld))/..)
-ifneq ($(GCC_ARM32_TC),)
-  CC_ARM32 += --gcc-toolchain=$(GCC_ARM32_TC)
-endif
+  CC_ARM32 := $(CC) $(CLANG_TARGET_ARM32)
 else
   CC_ARM32 := $(CROSS_COMPILE_ARM32)$(cc-name)
 endif
@@ -29,13 +25,10 @@ cc32-ldoption = $(call try-run,\
 # arm64 one.
 # As a result we set our own flags here.
 
-# From top-level Makefile
-# NOSTDINC_FLAGS
-VDSO_CPPFLAGS := -nostdinc -isystem $(shell $(CC_ARM32) -print-file-name=include)
+# KBUILD_CPPFLAGS and NOSTDINC_FLAGS from top-level Makefile
+VDSO_CPPFLAGS := -D__KERNEL__ -nostdinc
+VDSO_CPPFLAGS += -isystem $(shell $(CC_ARM32) -print-file-name=include 2>/dev/null)
 VDSO_CPPFLAGS += $(LINUXINCLUDE)
-VDSO_CPPFLAGS += -D__KERNEL__
-VDSO_CPPFLAGS += $(call cc-option,-Qunused-arguments,)
-VDSO_CPPFLAGS += $(ARCH_CPPFLAGS) $(KCPPFLAGS)
 
 # Common C and assembly flags
 # From top-level Makefile
@@ -43,9 +36,6 @@ VDSO_CAFLAGS := $(VDSO_CPPFLAGS)
 VDSO_CAFLAGS += $(call cc32-option,-fno-PIE)
 ifdef CONFIG_DEBUG_INFO
 VDSO_CAFLAGS += -g
-endif
-ifeq ($(shell $(CONFIG_SHELL) $(srctree)/scripts/gcc-goto.sh $(CC_ARM32)), y)
-VDSO_CAFLAGS += -DCC_HAVE_ASM_GOTO
 endif
 
 # From arm Makefile
@@ -103,8 +93,11 @@ VDSO_LDFLAGS += -Wl,-z,max-page-size=4096 -Wl,-z,common-page-size=4096
 VDSO_LDFLAGS += -nostdlib -shared -mfloat-abi=soft
 VDSO_LDFLAGS += $(call cc32-ldoption,-Wl$(comma)--hash-style=sysv)
 VDSO_LDFLAGS += $(call cc32-ldoption,-Wl$(comma)--build-id)
+ifeq ($(cc-name),clang)
+VDSO_LDFLAGS += $(call cc32-ldoption,-fuse-ld=lld)
+else
 VDSO_LDFLAGS += $(call cc32-ldoption,-fuse-ld=bfd)
-
+endif
 
 # Borrow vdsomunge.c from the arm vDSO
 # We have to use a relative path because scripts/Makefile.host prefixes
@@ -168,7 +161,7 @@ quiet_cmd_vdsosym = VDSOSYM $@
       cmd_vdsosym = $(NM) $< | $(gen-vdsosym) | LC_ALL=C sort > $@
 
 # Install commands for the unstripped file
-quiet_cmd_vdso_install = INSTALL $@
+quiet_cmd_vdso_install = INSTALL32 $@
       cmd_vdso_install = cp $(obj)/$@.dbg $(MODLIB)/vdso/vdso32.so
 
 vdso.so: $(obj)/vdso.so.dbg

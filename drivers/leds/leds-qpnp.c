@@ -1,4 +1,5 @@
 /* Copyright (c) 2012-2015, 2017, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2016 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -2669,8 +2670,6 @@ restore:
 static void led_blink(struct qpnp_led_data *led,
 			struct pwm_config_data *pwm_cfg)
 {
-	int rc;
-
 	flush_work(&led->work);
 	mutex_lock(&led->lock);
 	if (pwm_cfg->use_blink) {
@@ -2695,25 +2694,15 @@ static void led_blink(struct qpnp_led_data *led,
 			pwm_cfg->pwm_enabled = 0;
 		}
 		qpnp_pwm_init(pwm_cfg, led->pdev, led->cdev.name);
-		if (led->id == QPNP_ID_RGB_RED || led->id == QPNP_ID_RGB_GREEN
-				|| led->id == QPNP_ID_RGB_BLUE) {
-			rc = qpnp_rgb_set(led);
-			if (rc < 0)
-				dev_err(&led->pdev->dev,
-				"RGB set brightness failed (%d)\n", rc);
-		} else if (led->id == QPNP_ID_LED_MPP) {
-			rc = qpnp_mpp_set(led);
-			if (rc < 0)
-				dev_err(&led->pdev->dev,
-				"MPP set brightness failed (%d)\n", rc);
-		} else if (led->id == QPNP_ID_KPDBL) {
-			rc = qpnp_kpdbl_set(led);
-			if (rc < 0)
-				dev_err(&led->pdev->dev,
-				"KPDBL set brightness failed (%d)\n", rc);
-		}
+
+		mutex_unlock(&led->lock);
+		if (led->in_order_command_processing)
+			queue_work(led->workqueue, &led->work);
+		else
+			schedule_work(&led->work);
+	} else {
+		mutex_unlock(&led->lock);
 	}
-	mutex_unlock(&led->lock);
 }
 
 static ssize_t blink_store(struct device *dev,
@@ -2836,7 +2825,7 @@ static ssize_t rgb_blink_store(struct device *dev,
 	const char *buf, size_t count)
 {
 	struct rgb_sync *rgb_sync;
-	struct qpnp_led_data *led;
+	struct qpnp_led_data *led = NULL;
 	unsigned long blinking;
 	struct led_classdev *led_cdev = dev_get_drvdata(dev);
 	ssize_t rc = -EINVAL, i;

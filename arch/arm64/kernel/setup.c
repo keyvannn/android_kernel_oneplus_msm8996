@@ -3,6 +3,7 @@
  *
  * Copyright (C) 1995-2001 Russell King
  * Copyright (C) 2012 ARM Ltd.
+ * Copyright (C) 2018 XiaoMi, Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -65,6 +66,24 @@
 #include <asm/efi.h>
 #include <asm/xen/hypervisor.h>
 #include <asm/mmu_context.h>
+#include <asm/bootinfo.h>
+
+#ifdef CONFIG_OF_FLATTREE
+void __init early_init_dt_setup_pureason_arch(unsigned long pu_reason)
+{
+	set_powerup_reason(pu_reason);
+	pr_info("Powerup reason=0x%x\n", get_powerup_reason());
+}
+
+void __init early_init_dt_setup_hwversion_arch(unsigned long hw_version)
+{
+	set_hw_version(hw_version);
+	pr_info("Hw version=0x%x\n", get_hw_version());
+}
+
+#endif
+
+phys_addr_t __fdt_pointer __initdata;
 
 unsigned int boot_reason;
 EXPORT_SYMBOL(boot_reason);
@@ -303,11 +322,27 @@ u64 __cpu_logical_map[NR_CPUS] = { [0 ... NR_CPUS-1] = INVALID_HWID };
 
 void __init __weak init_random_pool(void) { }
 
+static int __init androidboot_hwversion(char *p)
+{
+	unsigned int devid, major, minor;
+
+	if (sscanf(p, "%x.%x.%x", &devid, &major, &minor) != 3)
+		return -1;
+
+	set_hw_version(
+		devid << HW_DEVID_VERSION_SHIFT |
+		major << HW_MAJOR_VERSION_SHIFT |
+		minor << HW_MINOR_VERSION_SHIFT);
+
+	return 0;
+}
+early_param("androidboot.hwversion", androidboot_hwversion);
+
 void __init setup_arch(char **cmdline_p)
 {
 	pr_info("Boot CPU: AArch64 Processor [%08x]\n", read_cpuid_id());
 
-	sprintf(init_utsname()->machine, ELF_PLATFORM);
+	sprintf(init_utsname()->machine, UTS_MACHINE);
 	init_mm.start_code = (unsigned long) _text;
 	init_mm.end_code   = (unsigned long) _etext;
 	init_mm.end_data   = (unsigned long) _edata;

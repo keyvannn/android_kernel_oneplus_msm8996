@@ -120,7 +120,7 @@ nf_tproxy_get_sock_v4(struct net *net, const u8 protocol,
 			sk = inet_lookup_listener(net, &tcp_hashinfo,
 						    saddr, sport,
 						    daddr, dport,
-						    in->ifindex);
+						    in->ifindex, 0);
 
 			/* NOTE: we return listeners even if bound to
 			 * 0.0.0.0, those are filtered out in
@@ -184,7 +184,7 @@ nf_tproxy_get_sock_v6(struct net *net, const u8 protocol,
 			sk = inet6_lookup_listener(net, &tcp_hashinfo,
 						   saddr, sport,
 						   daddr, ntohs(dport),
-						   in->ifindex);
+						   in->ifindex, 0);
 
 			/* NOTE: we return listeners even if bound to
 			 * 0.0.0.0, those are filtered out in
@@ -195,7 +195,7 @@ nf_tproxy_get_sock_v6(struct net *net, const u8 protocol,
 		case NFT_LOOKUP_ESTABLISHED:
 			sk = __inet6_lookup_established(net, &tcp_hashinfo,
 							saddr, sport, daddr, ntohs(dport),
-							in->ifindex);
+							in->ifindex, 0);
 			break;
 		default:
 			BUG();
@@ -521,8 +521,7 @@ static int tproxy_tg6_check(const struct xt_tgchk_param *par)
 	    !(i->invflags & IP6T_INV_PROTO))
 		return 0;
 
-	pr_info("Can be used only in combination with "
-		"either -p tcp or -p udp\n");
+	pr_info_ratelimited("Can be used only with -p tcp or -p udp\n");
 	return -EINVAL;
 }
 #endif
@@ -535,8 +534,7 @@ static int tproxy_tg4_check(const struct xt_tgchk_param *par)
 	    && !(i->invflags & IPT_INV_PROTO))
 		return 0;
 
-	pr_info("Can be used only in combination with "
-		"either -p tcp or -p udp\n");
+	pr_info_ratelimited("Can be used only with -p tcp or -p udp\n");
 	return -EINVAL;
 }
 

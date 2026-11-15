@@ -2,7 +2,7 @@ KASAN_SANITIZE_scm.o := n
 
 CFLAGS_scm.o :=$(call as-instr,.arch_extension sec,-DREQUIRES_SEC=1)
 
-ccflags-$(CONFIG_MSM_QBT1000) += -Idrivers/misc/
+ccflags-$(CONFIG_MSM_QBT1000) += -I $(srctree)/drivers/misc/
 
 obj-$(CONFIG_MSM_INRUSH_CURRENT_MITIGATION) += inrush-current-mitigation.o
 obj-$(CONFIG_MSM_SMEM)	+=	msm_smem.o smem_debug.o
@@ -19,6 +19,7 @@ obj-$(CONFIG_MSM_SMP2P)	+=	smp2p.o smp2p_loopback.o smp2p_debug.o smp2p_sleepsta
 obj-$(CONFIG_MSM_QMI_INTERFACE)	+=	qmi_interface.o
 obj-$(CONFIG_MSM_RPM_SMD)	+=	rpm-smd.o
 obj-$(CONFIG_MSM_HVC) += hvc.o
+obj-$(CONFIG_SERIAL_NUM) += serial_num.o
 ifdef CONFIG_DEBUG_FS
 obj-$(CONFIG_MSM_RPM_SMD)	+=	rpm-smd-debug.o
 endif
@@ -106,6 +107,7 @@ obj-$(CONFIG_MSM_RPM_STATS_LOG) += rpm_stats.o rpm_master_stat.o rpm_rail_stats.
 obj-$(CONFIG_MSM_RPM_LOG) += rpm_log.o
 obj-$(CONFIG_QSEE_IPC_IRQ_BRIDGE) += qsee_ipc_irq_bridge.o
 obj-$(CONFIG_WCD_DSP_GLINK) += wcd-dsp-glink.o
+obj-$(CONFIG_MSM_CAPTOUCH) += captouch.o
 obj-$(CONFIG_QCOM_SMCINVOKE) += smcinvoke.o
 obj-$(CONFIG_QCOM_EARLY_RANDOM)	+= early_random.o
 obj-$(CONFIG_QCOM_CX_IPEAK) += cx_ipeak.o
